@@ -8,9 +8,10 @@ that fails to parse is echoed back verbatim — never a partial rewrite.
 
 import pglast
 from pglast import Error as PglastError
-from pglast import _extract_comments, parse_sql
+from pglast import parse_sql
 
 from . import printers as _printers  # noqa: F401  (registers the overrides)
+from .comments import extract_comments, reinsert_comments
 from .lowercase import lowercase_keywords
 from .placeholders import normalize, restore
 from .stream import FourSpaceStream
@@ -92,14 +93,12 @@ def _gap_comments(gap: str) -> str:
 def _format_one(statement: str) -> str:
     """Format a single statement, falling back to the verbatim input."""
     try:
-        tree = parse_sql(statement)
+        bare, comments = extract_comments(statement)
+        tree = parse_sql(bare)
         if not tree:  # nothing but comments
             return statement
-        stream = FourSpaceStream(
-            special_functions=True,
-            comma_at_eoln=True,
-            comments=_extract_comments(statement),
-        )
-        return lowercase_keywords(stream(tree))
+        stream = FourSpaceStream(special_functions=True, comma_at_eoln=True)
+        formatted = lowercase_keywords(stream(tree))
+        return reinsert_comments(formatted, comments)
     except PglastError:
         return statement
