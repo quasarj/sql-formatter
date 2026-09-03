@@ -12,7 +12,14 @@ lint-and-fix tool (sqruff, sqlfluff) could deliver. Background in
 
 ```sh
 uv run pgfmt < query.sql        # stdin → stdout
+uv run pgfmt query.sql other.sql   # format files in place
+find . -name '*.sql' -exec pgfmt {} +   # whole tree, via find
 ```
+
+In-place mode rewrites a file only when formatting changes it, reports
+`reformatted <file>` on stderr, and exits 1 only when a file cannot be
+read or written — unparseable SQL passes through verbatim, as in
+filter mode.
 
 As a Neovim `formatprg`:
 
@@ -79,8 +86,9 @@ corpus: idempotence, and that output parses to a byte-identical AST.
   land one token off; a comment whose anchors all vanish falls back to
   the start or end of its statement.
 - Lines exceed 80 columns only when a single unbreakable expression is
-  itself too long (one long comparison, a long `||` chain); lists,
-  boolean chains, `on` conditions, and `case` arms all wrap.
+  itself too long (e.g. one very long comparison); lists, boolean
+  chains, `on` conditions, `case` arms, function-call parens, and
+  `||` chains (greedy fill, breaking before the operator) all wrap.
 - Semantic normalizations the sqruff config performed (dropping unused
   aliases, reordering join operands, inserting explicit `AS`) are not
   implemented; pglast reprints the tree it parsed. Postgres itself
