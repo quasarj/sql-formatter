@@ -40,14 +40,16 @@ class FourSpaceStream(IndentedStream):
         RawStream.print_list(self, nodes, sep, relative_indent, standalone_items,
                              are_names, is_symbol, item_needs_parens)
 
-    def fits_on_current_line(self, rendered: str) -> bool:
+    def fits_on_current_line(self, rendered: str, reserve: int = 0) -> bool:
         """Would ``rendered`` fit within the line-length target here?
 
         At the start of a line the pending indentation hasn't been
         written yet, so the effective column is ``current_indent``.
+        ``reserve`` holds back room for text known to follow on the
+        same line (an alias, the other side of a comparison).
         """
         start = self.current_column or self.current_indent
-        return start + len(rendered) <= MAX_LINE_LENGTH
+        return start + len(rendered) + reserve <= MAX_LINE_LENGTH
 
     def concat(self, nodes, sep: str = ", ") -> str:
         """Render ``nodes`` compactly on one line, for fit measurement."""

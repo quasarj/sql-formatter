@@ -338,6 +338,35 @@ def test_short_calls_stay_inline() -> None:
     assert out == 'select count(*) filter (where x > 0) as n, coalesce(a, b) as c\nfrom t\n'
 
 
+def test_concat_chain_breaks_greedily_at_operator() -> None:
+    out = format_sql(
+        "select first_name_part || ' ' || middle_name_part || ' ' || "
+        "last_name_part || ' (' || suffix_part || ')' as full_display_name "
+        'from people')
+    assert all(len(line) <= 80 for line in out.splitlines())
+    assert ("    first_name_part || ' ' || middle_name_part || ' ' || "
+            "last_name_part || ' ('\n") in out
+    assert "        || suffix_part || ')' as full_display_name\n" in out
+
+
+def test_concat_chain_in_comparison_reserves_the_suffix() -> None:
+    out = format_sql(
+        "select a from t where root_path || '/' || file_location.rel_path "
+        "|| '/' || file_basename_column = full_path_parameter_value")
+    assert all(len(line) <= 80 for line in out.splitlines())
+    assert '    || file_basename_column) = full_path_parameter_value\n' in out
+
+
+def test_short_concat_chain_stays_inline() -> None:
+    out = format_sql("select root_path || '/' || rel_path as path from t")
+    assert "select root_path || '/' || rel_path as path\n" in out
+
+
+def test_parenthesized_concat_group_keeps_its_parens() -> None:
+    out = format_sql('select a || (b || c) as grouped from t')
+    assert 'a || (b || c)' in out
+
+
 def test_empty_input_is_returned_unchanged() -> None:
     assert format_sql('') == ''
     assert format_sql('   \n') == '   \n'

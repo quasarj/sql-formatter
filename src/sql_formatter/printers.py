@@ -26,6 +26,7 @@ from pglast.printers.dml import (
     COL_NAME_KEYWORDS,
     _bool_expr_needs_to_be_wrapped_in_parens,
     _select_needs_to_be_wrapped_in_parens,
+    a_expr_kind_printer,
     cte_materialize_printer,
     get_string_value,
 )
@@ -343,20 +344,33 @@ def _raw_join_expr(node, output) -> None:
 _MIN_WRAPPABLE_ARGS_LENGTH = 16
 
 
-def _call_args_should_wrap(node, output, args) -> bool:
-    """Break a call's parens block-style when the line will overflow.
+def _measurement_target(node):
+    """The widest expression sharing this node's output line.
 
-    The call alone can fit while the full select-list item still
-    overflows because of its ``as alias`` suffix, so when the call is a
-    target-list item's value the whole item is measured instead.
+    A node's own rendering can fit while the line still overflows
+    because of what surrounds it — an ``as alias`` suffix, the other
+    side of a comparison, a cast.  Climb through those enclosing
+    expressions so the overflow check sees the whole line.
     """
+    target = node
+    for i in range(8):
+        try:
+            parent = node.ancestors[i]
+        except AttributeError:
+            break
+        if not isinstance(parent, (ast.A_Expr, ast.TypeCast, ast.ResTarget)):
+            break
+        target = parent
+    return target
+
+
+def _call_args_should_wrap(node, output, args) -> bool:
+    """Break a call's parens block-style when the line will overflow."""
     if not _is_block_stream(output) or not args:
         return False
     if len(output.concat(list(args), ', ')) < _MIN_WRAPPABLE_ARGS_LENGTH:
         return False
-    parent = node.ancestors[0]
-    target = parent if isinstance(parent, ast.ResTarget) else node
-    return not output.fits_on_current_line(output.concat([target]))
+    return not output.fits_on_current_line(output.concat([_measurement_target(node)]))
 
 
 def _print_call_parens(node, output, args, print_interior) -> None:
@@ -417,6 +431,70 @@ def func_call(node, output):
     if node.over:
         output.swrite('OVER ')
         output.print_node(node.over)
+
+
+# Mirrors the stock AEXPR_OP parens rule: these operand types would be
+# re-parsed differently without explicit parentheses.
+_CONCAT_OPERAND_PARENS_TYPES = (ast.BoolExpr, ast.NullTest, ast.A_Expr)
+
+
+def _is_concat_op(node) -> bool:
+    return (isinstance(node, ast.A_Expr)
+            and node.kind == enums.A_Expr_Kind.AEXPR_OP
+            and not (isinstance(node.name, tuple) and len(node.name) > 1)
+            and get_string_value(node.name) == '||')
+
+
+def _concat_chain_operands(node) -> list:
+    """Flatten the left-associative spine of a ``||`` chain, in source
+    order.  Only the left spine flattens — a parenthesized right-side
+    chain must keep its parens to re-parse identically."""
+    operands = []
+    while _is_concat_op(node):
+        operands.append(node.rexpr)
+        node = node.lexpr
+    operands.append(node)
+    operands.reverse()
+    return operands
+
+
+def _print_concat_chain(output, operands, suffix_length: int) -> None:
+    """Greedy fill: pack operands onto the line, breaking before ``||``
+    one level in when the next operand would overflow.  The last
+    operand also reserves room for whatever follows the chain on its
+    line (a closing paren, ``as alias``, ``= value``)."""
+    def print_operand(operand) -> None:
+        with output.expression(isinstance(operand, _CONCAT_OPERAND_PARENS_TYPES)):
+            output.print_node(operand)
+
+    print_operand(operands[0])
+    with output.push_indent(INDENT_STEP, relative=False):
+        for i, operand in enumerate(operands[1:], start=1):
+            rendered = output.concat([operand])
+            if isinstance(operand, _CONCAT_OPERAND_PARENS_TYPES):
+                rendered = f'({rendered})'
+            reserve = suffix_length if i == len(operands) - 1 else 0
+            if output.fits_on_current_line(f' || {rendered}', reserve):
+                output.write(' || ')
+            else:
+                output.newline()
+                output.write('|| ')
+            print_operand(operand)
+
+
+@node_printer(ast.A_Expr, override=True)
+def a_expr(node, output):
+    # A `||` chain head that overflows its line breaks greedily at the
+    # operator; everything else keeps the stock behavior.
+    if (_is_block_stream(output) and _is_concat_op(node)
+            and not _is_concat_op(node.ancestors[0])):
+        target = _measurement_target(node)
+        target_rendered = output.concat([target])
+        if not output.fits_on_current_line(target_rendered):
+            suffix_length = max(0, len(target_rendered) - len(output.concat([node])))
+            _print_concat_chain(output, _concat_chain_operands(node), suffix_length)
+            return
+    a_expr_kind_printer(node.kind, node, output)
 
 
 @node_printer(ast.CoalesceExpr, override=True)
