@@ -55,7 +55,12 @@ src/sql_formatter/
   formatter.py     statement splitting, per-statement parse/print/fallback
   placeholders.py  ? and %s → $n and back (opaque-region scanner)
   stream.py        FourSpaceStream: level-based indents instead of
-                   pglast's column-aligned ones
+                   pglast's column-aligned ones; lists break by
+                   measured 80-column fit
+  comments.py      comment extraction/re-insertion anchored by token
+                   occurrence, so trailing comments stay with the token
+                   they followed (pglast's own comment support attaches
+                   them to the next node instead)
   printers.py      overrides of pglast's stock printers for the house
                    layout rules (SELECT clauses, joins, bool exprs,
                    subqueries, CTEs, set operations)
@@ -68,18 +73,19 @@ corpus: idempotence, and that output parses to a byte-identical AST.
 
 ## Known limitations
 
-- **Trailing comment placement.** Comments are always preserved, but
-  pglast attaches a trailing comment to the *following* token, so
-  `where x = 1 -- note` comes back as `where -- note` / `x = 1`.
-  Fixing this means post-processing comment positions from
-  `parser.scan`; not done yet.
+- **Comment anchoring is by token occurrence.** Comments are never
+  lost, but when the formatter adds or removes tokens near a comment's
+  anchor (explicit `inner`, dropped redundant parens) the comment can
+  land one token off; a comment whose anchors all vanish falls back to
+  the start or end of its statement.
+- Lines exceed 80 columns only when a single unbreakable expression is
+  itself too long (one long comparison, a long `||` chain); lists,
+  boolean chains, `on` conditions, and `case` arms all wrap.
 - Semantic normalizations the sqruff config performed (dropping unused
   aliases, reordering join operands, inserting explicit `AS`) are not
   implemented; pglast reprints the tree it parsed. Postgres itself
   normalizes a bare `join` to `inner join` and `full outer join` to
   `full join` in our printers' output.
-- A nested `or` inside `and` stays inline and parenthesized even when
-  long; only query-level conditions get one line each.
 - `pglast` is pinned loosely (`>=8.4`); printer overrides copy stock
   printer bodies, so a major pglast upgrade needs a diff against
   `pglast/printers/dml.py`.

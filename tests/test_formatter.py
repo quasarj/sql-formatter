@@ -257,6 +257,43 @@ def test_standalone_comment_between_statements() -> None:
     assert out == 'select 1;\n\n-- section two\nselect 2\n'
 
 
+def test_long_or_group_wraps_at_80() -> None:
+    out = format_sql(
+        "select a from t where status = 'ok' and (category = 'first_category' "
+        "or category = 'second_category' or category = 'third_category' "
+        "or category = 'fourth_category')")
+    assert all(len(line) <= 80 for line in out.splitlines())
+    assert "    and (category = 'first_category'\n" in out
+    assert "        or category = 'second_category'\n" in out
+
+
+def test_long_on_condition_wraps_at_its_ands() -> None:
+    out = format_sql(
+        'select a.x from first_long_table as a join second_long_table as b on '
+        'a.first_key_column = b.first_key_column '
+        'and a.second_key_column = b.second_key_column')
+    assert all(len(line) <= 80 for line in out.splitlines())
+    assert '        on a.first_key_column = b.first_key_column\n' in out
+    assert '            and a.second_key_column = b.second_key_column\n' in out
+
+
+def test_short_case_stays_inline() -> None:
+    out = format_sql("select case when a = 1 then 'one' else 'other' end from t")
+    assert "select case when a = 1 then 'one' else 'other' end\n" in out
+
+
+def test_long_case_gets_block_layout() -> None:
+    out = format_sql(
+        "select case when account_status = 'active' then 'engaged' "
+        "when account_status = 'dormant' then 'dormant_label_here' "
+        "else 'inactive' end as engagement from accounts")
+    assert all(len(line) <= 80 for line in out.splitlines())
+    assert '    case\n' in out
+    assert "        when account_status = 'active' then 'engaged'\n" in out
+    assert "        else 'inactive'\n" in out
+    assert '    end as engagement\n' in out
+
+
 def test_empty_input_is_returned_unchanged() -> None:
     assert format_sql('') == ''
     assert format_sql('   \n') == '   \n'

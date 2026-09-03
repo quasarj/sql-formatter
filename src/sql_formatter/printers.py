@@ -239,7 +239,10 @@ def bool_expr(node, output):
                 with output.expression(_bool_expr_needs_to_be_wrapped_in_parens(arg)):
                     output.print_node(arg)
     else:
-        output.print_list(node.args, keyword, standalone_items=False,
+        # Nested groups and join quals: inline when they fit the line
+        # target, otherwise one operand per line with a leading and/or
+        # (standalone_items=None lets the stream measure).
+        output.print_list(node.args, keyword, standalone_items=None,
                           item_needs_parens=_bool_expr_needs_to_be_wrapped_in_parens)
 
 
@@ -331,6 +334,48 @@ def _raw_join_expr(node, output) -> None:
     if node.alias:
         output.writes(' AS ')
         output.print_name(node.alias)
+
+
+@node_printer(ast.CaseExpr, override=True)
+def case_expr(node, output):
+    # Block layout: one WHEN per line one level under CASE, END back at
+    # the CASE level.  On a measuring RawStream the newlines and indents
+    # are no-ops, so this same shape degrades to a single line.
+    if _is_block_stream(output):
+        rendered = output.concat([node])
+        if output.fits_on_current_line(rendered):
+            output.write(rendered)
+            return
+    output.write('CASE')
+    if node.arg:
+        output.write(' ')
+        output.print_node(node.arg)
+    with output.push_indent(INDENT_STEP, relative=False):
+        for when in node.args:
+            output.newline()
+            output.print_node(when)
+        if node.defresult:
+            output.newline()
+            output.write('ELSE ')
+            output.print_node(node.defresult)
+    output.newline()
+    output.write('END')
+
+
+@node_printer(ast.CaseWhen, override=True)
+def case_when(node, output):
+    output.write('WHEN ')
+    output.print_node(node.expr)
+    if _is_block_stream(output):
+        rendered = ' THEN ' + output.concat([node.result])
+        if not output.fits_on_current_line(rendered):
+            with output.push_indent(INDENT_STEP, relative=False):
+                output.newline()
+                output.write('THEN ')
+                output.print_node(node.result)
+            return
+    output.write(' THEN ')
+    output.print_node(node.result)
 
 
 @node_printer(ast.SubLink, override=True)

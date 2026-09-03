@@ -9,7 +9,7 @@ than the enclosing line"; at the start of a line it keeps the current
 level instead of aligning.
 """
 
-from pglast.stream import IndentedStream
+from pglast.stream import IndentedStream, RawStream
 
 INDENT_STEP = 4
 MAX_LINE_LENGTH = 80
@@ -34,8 +34,11 @@ class FourSpaceStream(IndentedStream):
         if standalone_items is None:
             rendered = self._concat_nodes(nodes, sep, are_names, item_needs_parens)
             standalone_items = not self.fits_on_current_line(rendered)
-        super().print_list(nodes, sep, relative_indent, standalone_items,
-                           are_names, is_symbol, item_needs_parens)
+        # Skip IndentedStream.print_list: its remaining duties (compact
+        # margin, padding that aligns the first item under a multi-char
+        # separator) are alignment behaviors this stream replaces.
+        RawStream.print_list(self, nodes, sep, relative_indent, standalone_items,
+                             are_names, is_symbol, item_needs_parens)
 
     def fits_on_current_line(self, rendered: str) -> bool:
         """Would ``rendered`` fit within the line-length target here?"""
