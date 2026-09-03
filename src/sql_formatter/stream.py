@@ -41,8 +41,13 @@ class FourSpaceStream(IndentedStream):
                              are_names, is_symbol, item_needs_parens)
 
     def fits_on_current_line(self, rendered: str) -> bool:
-        """Would ``rendered`` fit within the line-length target here?"""
-        return self.current_column + len(rendered) <= MAX_LINE_LENGTH
+        """Would ``rendered`` fit within the line-length target here?
+
+        At the start of a line the pending indentation hasn't been
+        written yet, so the effective column is ``current_indent``.
+        """
+        start = self.current_column or self.current_indent
+        return start + len(rendered) <= MAX_LINE_LENGTH
 
     def concat(self, nodes, sep: str = ", ") -> str:
         """Render ``nodes`` compactly on one line, for fit measurement."""

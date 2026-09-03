@@ -294,6 +294,50 @@ def test_long_case_gets_block_layout() -> None:
     assert '    end as engagement\n' in out
 
 
+def test_function_call_wraps_when_item_overflows() -> None:
+    """The call alone fits, but the `as alias` suffix pushes the line
+    over 80, so the parens break block-style."""
+    out = format_sql(
+        "select date_trunc('day', min(coalesce(file_import_time, import_time))) "
+        "as earliest_import_day from dicom_file")
+    assert out == (
+        'select\n'
+        '    date_trunc(\n'
+        "        'day', min(coalesce(file_import_time, import_time))\n"
+        '    ) as earliest_import_day\n'
+        'from dicom_file\n'
+    )
+
+
+def test_wrapped_call_with_long_args_breaks_one_per_line() -> None:
+    out = format_sql(
+        'select coalesce(first_extremely_long_column_name, '
+        'second_extremely_long_column_name, third_extremely_long_column_name, '
+        "'the_default_fallback_value') as resolved_contact from t")
+    assert all(len(line) <= 80 for line in out.splitlines())
+    assert '    coalesce(\n' in out
+    assert '        first_extremely_long_column_name,\n' in out
+    assert '    ) as resolved_contact\n' in out
+
+
+def test_trivial_args_never_wrap() -> None:
+    """Wrapping count(*) can't shorten anything; the filter clause is
+    what wraps instead."""
+    out = format_sql(
+        "select count(*) filter (where import_status = 'complete' "
+        "and file_type = 'dicom') as completed_dicom_file_count_for_reporting "
+        'from dicom_file')
+    assert all(len(line) <= 80 for line in out.splitlines())
+    assert '    count(*) filter (\n' in out
+    assert '    ) as completed_dicom_file_count_for_reporting\n' in out
+
+
+def test_short_calls_stay_inline() -> None:
+    out = format_sql("select count(*) filter (where x > 0) as n, "
+                     'coalesce(a, b) as c from t')
+    assert out == 'select count(*) filter (where x > 0) as n, coalesce(a, b) as c\nfrom t\n'
+
+
 def test_empty_input_is_returned_unchanged() -> None:
     assert format_sql('') == ''
     assert format_sql('   \n') == '   \n'

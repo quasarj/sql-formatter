@@ -23,6 +23,7 @@ are no-ops), so block layout is gated on the stream type.
 from pglast import ast, enums
 from pglast.printers import node_printer
 from pglast.printers.dml import (
+    COL_NAME_KEYWORDS,
     _bool_expr_needs_to_be_wrapped_in_parens,
     _select_needs_to_be_wrapped_in_parens,
     cte_materialize_printer,
@@ -334,6 +335,105 @@ def _raw_join_expr(node, output) -> None:
     if node.alias:
         output.writes(' AS ')
         output.print_name(node.alias)
+
+
+# Wrapping a call whose argument list renders shorter than this can't
+# meaningfully shorten the line (think count(*), min(x)); the overflow
+# is elsewhere and block parens would just add noise.
+_MIN_WRAPPABLE_ARGS_LENGTH = 16
+
+
+def _call_args_should_wrap(node, output, args) -> bool:
+    """Break a call's parens block-style when the line will overflow.
+
+    The call alone can fit while the full select-list item still
+    overflows because of its ``as alias`` suffix, so when the call is a
+    target-list item's value the whole item is measured instead.
+    """
+    if not _is_block_stream(output) or not args:
+        return False
+    if len(output.concat(list(args), ', ')) < _MIN_WRAPPABLE_ARGS_LENGTH:
+        return False
+    parent = node.ancestors[0]
+    target = parent if isinstance(parent, ast.ResTarget) else node
+    return not output.fits_on_current_line(output.concat([target]))
+
+
+def _print_call_parens(node, output, args, print_interior) -> None:
+    if _call_args_should_wrap(node, output, args):
+        _print_block_parens(output, print_interior)
+    else:
+        with output.expression(True):
+            print_interior()
+
+
+def _print_func_call_interior(node, output) -> None:
+    if node.agg_distinct:
+        output.writes('DISTINCT')
+    if node.args is None:
+        if node.agg_star:
+            output.write('*')
+    elif node.func_variadic:
+        if len(node.args) > 1:
+            output.print_list(node.args[:-1])
+            output.write(', ')
+        output.write('VARIADIC ')
+        output.print_node(node.args[-1])
+    else:
+        output.print_list(node.args)
+    if node.agg_order:
+        if not node.agg_within_group:
+            output.swrites('ORDER BY')
+            output.print_list(node.agg_order)
+        else:
+            output.writes(') WITHIN GROUP (ORDER BY')
+            output.print_list(node.agg_order)
+
+
+@node_printer(ast.FuncCall, override=True)
+def func_call(node, output):
+    name = '.'.join(n.sval for n in node.funcname)
+    special_printer = output.get_printer_for_function(name, node)
+    if special_printer is not None:
+        special_printer(node, output)
+        return
+
+    if output.special_functions and name in COL_NAME_KEYWORDS:
+        output.write(f'"{name}"')
+    else:
+        output.print_name(node.funcname)
+
+    wrappable_args = None if node.agg_within_group else node.args
+    _print_call_parens(node, output, wrappable_args,
+                       lambda: _print_func_call_interior(node, output))
+
+    if node.agg_filter:
+        def print_filter_interior() -> None:
+            output.write('WHERE ')
+            output.print_node(node.agg_filter)
+
+        output.swrite('FILTER ')
+        _print_call_parens(node, output, [node.agg_filter], print_filter_interior)
+    if node.over:
+        output.swrite('OVER ')
+        output.print_node(node.over)
+
+
+@node_printer(ast.CoalesceExpr, override=True)
+def coalesce_expr(node, output):
+    output.write('COALESCE')
+    _print_call_parens(node, output, node.args,
+                       lambda: output.print_list(node.args))
+
+
+@node_printer(ast.MinMaxExpr, override=True)
+def min_max_expr(node, output):
+    if node.op == enums.MinMaxOp.IS_GREATEST:
+        output.write('GREATEST')
+    else:
+        output.write('LEAST')
+    _print_call_parens(node, output, node.args,
+                       lambda: output.print_list(node.args))
 
 
 @node_printer(ast.CaseExpr, override=True)
