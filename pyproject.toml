@@ -1,0 +1,24 @@
+[project]
+name = "sql-formatter"
+version = "0.1.0"
+description = "Canonical Postgres SQL formatter for use as a Neovim formatprg"
+readme = "README.md"
+authors = [
+    { name = "Quasar Jarosz", email = "quasar@uams.edu" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "pglast>=8.4",
+]
+
+[project.scripts]
+pgfmt = "sql_formatter.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
