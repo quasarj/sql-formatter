@@ -3,6 +3,8 @@ name = "sql-formatter"
 version = "0.1.0"
 description = "Canonical Postgres SQL formatter for use as a Neovim formatprg"
 readme = "README.md"
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 authors = [
     { name = "Quasar Jarosz", email = "quasar@uams.edu" }
 ]

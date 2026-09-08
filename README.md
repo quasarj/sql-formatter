@@ -97,3 +97,7 @@ corpus: idempotence, and that output parses to a byte-identical AST.
 - `pglast` is pinned loosely (`>=8.4`); printer overrides copy stock
   printer bodies, so a major pglast upgrade needs a diff against
   `pglast/printers/dml.py`.
+
+## License
+
+GPLv3 — see `LICENSE`.
