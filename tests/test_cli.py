@@ -57,7 +57,7 @@ def test_multiple_files_and_bad_sql_in_place(tmp_path: Path) -> None:
     bad.write_text('not sql at all (((\n')
     proc = run_pgfmt('', str(good), str(bad))
     assert proc.returncode == 0
-    assert good.read_text() == 'select 1;\n\nselect 2\n'
+    assert good.read_text() == 'select 1\n;\n\nselect 2\n'
     assert bad.read_text() == 'not sql at all (((\n'
 
 

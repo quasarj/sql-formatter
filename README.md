@@ -38,7 +38,8 @@ Guarantees relied on by `formatprg`:
 ## Behavior
 
 - Keywords and type names lowercase; 4-space indents; 80-column target;
-  trailing commas; no forced final semicolon (an existing one is kept).
+  trailing commas; no forced final semicolon (an existing one is kept,
+  on a line of its own).
 - `from` always on its own line; a single table stays on the `from`
   line; each join on its own line one level under `from`; `natural left
   join x` never splits; long `on` conditions break to a nested line.

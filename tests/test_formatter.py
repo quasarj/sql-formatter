@@ -42,8 +42,8 @@ def test_unparseable_input_is_echoed_verbatim() -> None:
 def test_unparseable_statement_does_not_poison_the_buffer() -> None:
     text = 'select 1;\nthis is not sql;\nselect 2'
     out = format_sql(text)
-    assert 'select 1;' in out
-    assert 'this is not sql;' in out
+    assert 'select 1\n;' in out
+    assert 'this is not sql;' in out  # verbatim echo keeps its own shape
     assert 'select 2' in out
 
 
@@ -159,11 +159,20 @@ def test_quoted_identifiers_survive() -> None:
 
 def test_multiple_statements_separated() -> None:
     out = format_sql('select 1; select 2;')
-    assert out == 'select 1;\n\nselect 2;\n'
+    assert out == 'select 1\n;\n\nselect 2\n;\n'
 
 
 def test_no_semicolon_added_when_input_has_none() -> None:
     assert format_sql('select 1') == 'select 1\n'
+
+
+def test_final_semicolon_moves_to_its_own_line() -> None:
+    assert format_sql('select a, b from t;') == 'select a, b\nfrom t\n;\n'
+
+
+def test_semicolon_on_its_own_line_is_idempotent() -> None:
+    once = format_sql('select a, b from t;')
+    assert format_sql(once) == once
 
 
 def test_placeholders_round_trip_through_formatting() -> None:
@@ -249,12 +258,12 @@ def test_union_chain_stays_flat() -> None:
 
 
 def test_trailing_comment_after_final_semicolon() -> None:
-    assert format_sql('select 1; -- done') == 'select 1;  -- done\n'
+    assert format_sql('select 1; -- done') == 'select 1\n;  -- done\n'
 
 
 def test_standalone_comment_between_statements() -> None:
     out = format_sql('select 1;\n\n-- section two\nselect 2')
-    assert out == 'select 1;\n\n-- section two\nselect 2\n'
+    assert out == 'select 1\n;\n\n-- section two\nselect 2\n'
 
 
 def test_long_or_group_wraps_at_80() -> None:

@@ -46,9 +46,11 @@ def _format_statements(text: str) -> str:
             else:
                 parts.append(chunk)
         else:
-            piece = _format_one(chunk)
+            piece, was_formatted = _format_one(chunk)
             if not is_last or ';' in gap:
-                piece += ';'
+                # a kept semicolon goes on its own line, but not when the
+                # statement was echoed verbatim
+                piece += '\n;' if was_formatted else ';'
             trailer = _gap_comments(gap)
             if trailer:
                 piece += '  ' + trailer
@@ -90,15 +92,19 @@ def _gap_comments(gap: str) -> str:
     return gap.replace(';', ' ', 1).strip()
 
 
-def _format_one(statement: str) -> str:
-    """Format a single statement, falling back to the verbatim input."""
+def _format_one(statement: str) -> tuple[str, bool]:
+    """Format a single statement, falling back to the verbatim input.
+
+    Returns the text and whether it was actually formatted (False means
+    a verbatim echo, which the caller must not touch up further).
+    """
     try:
         bare, comments = extract_comments(statement)
         tree = parse_sql(bare)
         if not tree:  # nothing but comments
-            return statement
+            return statement, False
         stream = FourSpaceStream(special_functions=True, comma_at_eoln=True)
         formatted = lowercase_keywords(stream(tree))
-        return reinsert_comments(formatted, comments)
+        return reinsert_comments(formatted, comments), True
     except PglastError:
-        return statement
+        return statement, False
